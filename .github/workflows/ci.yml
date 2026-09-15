@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mix-grisp-io-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Elixir 1.20 / OTP 29
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      MIX_ENV: test
+      GRISP_CI_DEVICE: ${{ secrets.GRISP_CI_DEVICE }}
+      GRISP_CI_PASSWORD: ${{ secrets.GRISP_CI_PASSWORD }}
+      GRISP_CI_USERNAME: ${{ secrets.GRISP_CI_USERNAME }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Erlang and Elixir
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20"
+
+      - name: Restore dependency and build caches
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-otp-29-elixir-1.20-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp-29-elixir-1.20-
+
+      - name: Install Hex and Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Fetch dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Require live API secrets
+        if: github.event_name != 'pull_request'
+        run: |
+          : "${GRISP_CI_USERNAME:?GRISP_CI_USERNAME secret is missing}"
+          : "${GRISP_CI_PASSWORD:?GRISP_CI_PASSWORD secret is missing}"
+          : "${GRISP_CI_DEVICE:?GRISP_CI_DEVICE secret is missing}"
+
+      - name: Run all tests
+        run: mix test --warnings-as-errors
