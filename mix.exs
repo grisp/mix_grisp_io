@@ -6,7 +6,7 @@ defmodule MixGrispIo.MixProject do
   def project do
     [
       app: :mix_grisp_io,
-      version: "0.1.0",
+      version: "1.0.0",
       description: "Mix plug-in for publishing GRiSP software updates to GRiSP.io",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
