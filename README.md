@@ -11,7 +11,7 @@ Add the plug-in to your project dependencies:
 ```elixir
 def deps do
   [
-    {:mix_grisp_io, "~> 0.1"}
+    {:mix_grisp_io, "~> 1.0"}
   ]
 end
 ```
