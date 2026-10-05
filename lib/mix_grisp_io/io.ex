@@ -10,6 +10,19 @@ defmodule MixGrispIo.IO do
 
   def ask(prompt, :string), do: IO.gets("\n#{prompt} > ") |> normalize!()
 
+  def ask(prompt, :string, default) do
+    case IO.gets("\n#{prompt} > ") do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> default
+          answer -> answer
+        end
+
+      other ->
+        normalize!(other)
+    end
+  end
+
   def success(message) do
     Mix.shell().info(IO.ANSI.format([:green, IO.iodata_to_binary(message)]))
   end

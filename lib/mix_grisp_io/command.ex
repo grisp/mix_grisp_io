@@ -8,9 +8,17 @@ defmodule MixGrispIo.Command do
   def io, do: Application.get_env(:mix_grisp_io, :io_module, IO)
 
   def token! do
-    %{encrypted_token: encrypted} = config().read()
-    password = io().ask("Local password", :password)
-    config().decrypt_token(password, encrypted)
+    case config().read() do
+      %{token: token} when is_binary(token) ->
+        token
+
+      %{encrypted_token: encrypted} ->
+        password = io().ask("Local password", :password)
+        config().decrypt_token(password, encrypted)
+
+      other ->
+        raise Error, {:invalid_configuration, other}
+    end
   end
 
   def device!(nil), do: raise(Error, :no_device_serial_number)

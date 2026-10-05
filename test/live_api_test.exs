@@ -52,7 +52,7 @@ defmodule MixGrispIo.LiveAPITest do
   end
 
   test "auth and deauth request and revoke a live token" do
-    assert :ok = Auth.run()
+    assert :ok = Auth.run(credentials: true, encrypt_token: true)
     token = stored_token()
     on_exit(fn -> deauth(token) end)
 

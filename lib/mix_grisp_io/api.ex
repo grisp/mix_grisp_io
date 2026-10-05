@@ -5,6 +5,51 @@ defmodule MixGrispIo.API do
 
   @default_base_url "https://app.grisp.io"
 
+  @spec cli_session(binary(), binary(), :inet.port_number(), keyword()) :: map()
+  def cli_session(challenge, nonce, port, options \\ []) do
+    cli_request(
+      "/eresu/api/cli_session",
+      %{code_challenge: challenge, nonce: nonce, redirect_port: port},
+      201,
+      options
+    )
+  end
+
+  @spec cli_redeem(binary(), binary(), binary(), keyword()) :: binary()
+  def cli_redeem(session_id, code, verifier, options \\ []) do
+    %{"access_token" => token} =
+      cli_request(
+        "/eresu/api/cli_redeem",
+        %{session_id: session_id, code: code, code_verifier: verifier},
+        200,
+        options
+      )
+
+    token
+  end
+
+  defp cli_request(endpoint, payload, status, options) do
+    body = :jsx.encode(payload)
+
+    headers = [
+      {"content-type", "application/json"},
+      {"content-length", Integer.to_string(byte_size(body))}
+    ]
+
+    options = Keyword.merge([connect_timeout: 10_000, recv_timeout: 10_000], options)
+
+    case request(:post, url(options, endpoint), headers, body, options) do
+      {:ok, ^status, _, client} ->
+        response_json!(client, options)
+
+      {:ok, status, _, client} ->
+        raise Error, {:cli_api_error, status, response_body(client, options)}
+
+      {:error, reason} ->
+        raise Error, {:cli_request_failed, reason}
+    end
+  end
+
   @spec auth(binary(), binary(), keyword()) :: binary()
   def auth(username, password, options \\ []) do
     {:ok, hostname} = :inet.gethostname()
@@ -267,7 +312,7 @@ defmodule MixGrispIo.API do
   defp http_client(options), do: Keyword.get(options, :http_client, :hackney)
 
   defp http_options(options) do
-    selected = Keyword.take(options, [:recv_timeout, :protocols])
+    selected = Keyword.take(options, [:connect_timeout, :recv_timeout, :protocols])
     selected = [:with_body | selected]
     if insecure?(options), do: [:insecure | selected], else: selected
   end

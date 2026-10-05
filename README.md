@@ -29,11 +29,27 @@ Inspect a command with `mix help grisp-io.COMMAND`.
 mix grisp-io.auth
 ```
 
-This requests an API token and encrypts it locally using AES-256-GCM and the
-local password you provide. By default the plug-in uses the rebar3 global
-configuration directory and the same `grisp-io.config` format, so an existing
-`rebar3_grisp_io` login can be reused. Set `MIX_GRISP_IO_CONFIG_DIR` to override
-the directory.
+This opens a browser login session using PKCE (S256). A local HTTP listener on
+`127.0.0.1` uses an available port and waits up to five minutes for approval.
+The callback nonce must match the login attempt. If browser delivery fails,
+copy the authentication code from the confirmation page and paste it into the
+terminal prompt. The listener closes before the code is redeemed with the
+original verifier.
+
+After receiving the token, the command asks whether to protect it with a
+passphrase (`y/N`, default no). Skip that prompt with an explicit flag:
+
+```shell
+mix grisp-io.auth --encrypt-token=true
+mix grisp-io.auth --encrypt-token=false
+mix grisp-io.auth --credentials --encrypt-token=true
+```
+
+`--credentials` uses username/password login instead of the browser flow.
+Encrypted tokens use AES-256-GCM; unencrypted tokens are stored as plaintext.
+Both use the rebar3 global configuration directory and the same
+`grisp-io.config` format, so an existing `rebar3_grisp_io` login can be reused.
+Set `MIX_GRISP_IO_CONFIG_DIR` to override the directory.
 
 ### Upload
 

@@ -39,17 +39,21 @@ defmodule MixGrispIo.CommandTest do
   end
 
   test "auth requests and persists an encrypted token" do
-    assert :ok = Auth.run()
+    assert :ok = Auth.run(credentials: true, encrypt_token: true)
 
     assert_received {:config_written, %{username: "user", encrypted_token: :new_encrypted_token}}
 
-    assert_received {:success, "Authentication successful - Please provide new local password"}
+    assert_received {:success, "Please provide a local password to encrypt the token"}
     assert_received {:success, "Token successfully requested"}
   end
 
   test "auth rejects non-matching local passwords" do
     Process.put({:answer, "Confirm your local password"}, "different")
-    assert_raise Error, "The local password entries do not match", &Auth.run/0
+
+    assert_raise Error, "The local password entries do not match", fn ->
+      Auth.run(credentials: true, encrypt_token: true)
+    end
+
     refute_received {:config_written, _}
   end
 
