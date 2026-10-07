@@ -9,6 +9,21 @@ defmodule MixGrispIo.Error do
   @impl Exception
   def message(%__MODULE__{message: message}), do: message
 
+  defp reason_message(:invalid_encrypt_token_choice), do: "--encrypt-token must be true or false"
+  defp reason_message(:cli_login_timeout), do: "CLI login expired. Run auth again"
+
+  defp reason_message({:cli_listener_failed, reason}),
+    do: "Cannot use the local login listener: #{inspect(reason)}"
+
+  defp reason_message({:cli_browser_failed, reason}),
+    do: "Cannot open the browser: #{inspect(reason)}"
+
+  defp reason_message({:cli_request_failed, reason}),
+    do: "CLI login request failed: #{inspect(reason)}"
+
+  defp reason_message({:cli_api_error, status, body}),
+    do: "CLI login API returned HTTP #{status}: #{body}"
+
   defp reason_message(:wrong_credentials), do: "Wrong credentials"
   defp reason_message(:token_limit_reached), do: "Maximum number of tokens per user reached"
   defp reason_message(:forbidden), do: "No permission to perform this operation"

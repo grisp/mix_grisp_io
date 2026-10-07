@@ -142,6 +142,66 @@ defmodule MixGrispIo.APITest do
     end
   end
 
+  test "CLI session sends the challenge, nonce, and loopback port as JSON" do
+    Process.put(
+      :http_response,
+      {:ok, 201, [], ~s({"id":"session","auth_url":"https://example.test/login"})}
+    )
+
+    options = [base_url: "https://example.test", http_client: HTTPStub]
+    assert %{"id" => "session"} = API.cli_session("challenge", "nonce", 12345, options)
+
+    assert_received {:request, :post, "https://example.test/eresu/api/cli_session", headers, body,
+                     opts}
+
+    assert {"content-type", "application/json"} in headers
+    assert {"content-length", Integer.to_string(byte_size(body))} in headers
+    assert opts[:connect_timeout] == 10_000
+    assert opts[:recv_timeout] == 10_000
+
+    assert :jsx.decode(body, [:return_maps]) == %{
+             "code_challenge" => "challenge",
+             "nonce" => "nonce",
+             "redirect_port" => 12345
+           }
+  end
+
+  test "CLI redemption sends the verifier and returns the access token" do
+    Process.put(:http_response, {:ok, 200, [], ~s({"access_token":"access-token"})})
+
+    assert API.cli_redeem("session", "code", "verifier",
+             base_url: "https://example.test",
+             http_client: HTTPStub
+           ) == "access-token"
+
+    assert_received {:request, :post, "https://example.test/eresu/api/cli_redeem", _, body, _}
+
+    assert :jsx.decode(body, [:return_maps]) == %{
+             "session_id" => "session",
+             "code" => "code",
+             "code_verifier" => "verifier"
+           }
+  end
+
+  test "CLI API failures preserve HTTP and transport error reasons" do
+    Process.put(:http_response, {:ok, 403, [], "denied"})
+
+    error =
+      assert_raise Error, fn ->
+        API.cli_session("challenge", "nonce", 12345, http_client: HTTPStub)
+      end
+
+    assert error.reason == {:cli_api_error, 403, "denied"}
+    Process.put(:http_response, {:error, :timeout})
+
+    error =
+      assert_raise Error, fn ->
+        API.cli_redeem("session", "code", "verifier", http_client: HTTPStub)
+      end
+
+    assert error.reason == {:cli_request_failed, :timeout}
+  end
+
   setup do
     directory =
       Path.join(System.tmp_dir!(), "mix_grisp_io_api_#{System.unique_integer([:positive])}")

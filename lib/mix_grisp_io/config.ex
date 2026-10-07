@@ -14,7 +14,11 @@ defmodule MixGrispIo.Config do
   @key_bytes 32
 
   @type encrypted_token :: %{iv: binary(), tag: binary(), encrypted_token: binary()}
-  @type t :: %{username: binary(), encrypted_token: encrypted_token()}
+  @type t :: %{
+          optional(:username) => binary(),
+          optional(:token) => binary(),
+          optional(:encrypted_token) => encrypted_token()
+        }
 
   @spec write(t(), keyword()) :: :ok
   def write(config, options \\ []) do

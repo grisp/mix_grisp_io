@@ -1,7 +1,19 @@
 defmodule MixGrispIo.CommandTest do
   use ExUnit.Case, async: false
 
-  alias MixGrispIo.{Auth, Cancel, Deauth, Delete, Error, List, Reboot, Validate}
+  alias MixGrispIo.{
+    Auth,
+    Cancel,
+    Command,
+    Deauth,
+    Delete,
+    Deploy,
+    Error,
+    List,
+    Reboot,
+    Upload,
+    Validate
+  }
 
   defmodule IOStub do
     def ask(prompt, _type), do: Process.get({:answer, prompt}, default_answer(prompt))
@@ -14,7 +26,7 @@ defmodule MixGrispIo.CommandTest do
   end
 
   defmodule ConfigStub do
-    def read, do: %{encrypted_token: :encrypted}
+    def read, do: Process.get(:config, %{encrypted_token: :encrypted})
     def decrypt_token("password", :encrypted), do: "token"
     def delete, do: send(self(), :config_deleted)
     def encrypt_token("password", "new-token"), do: :new_encrypted_token
@@ -27,6 +39,11 @@ defmodule MixGrispIo.CommandTest do
     def reboot_device("token", device), do: send(self(), {:rebooted, device})
     def validate_update("token", device), do: send(self(), {:validated, device})
     def delete_package("token", package), do: send(self(), {:deleted, package})
+    def deploy_update("token", package, device), do: send(self(), {:deployed, package, device})
+
+    def update_package("token", package, path, force),
+      do: send(self(), {:uploaded, package, File.read!(path), force})
+
     def deauth("token"), do: response(:deauth_response, :deauthenticated)
     def list_packages("token"), do: Process.get(:packages, [])
 
@@ -39,17 +56,21 @@ defmodule MixGrispIo.CommandTest do
   end
 
   test "auth requests and persists an encrypted token" do
-    assert :ok = Auth.run()
+    assert :ok = Auth.run(credentials: true, encrypt_token: true)
 
     assert_received {:config_written, %{username: "user", encrypted_token: :new_encrypted_token}}
 
-    assert_received {:success, "Authentication successful - Please provide new local password"}
+    assert_received {:success, "Please provide a local password to encrypt the token"}
     assert_received {:success, "Token successfully requested"}
   end
 
   test "auth rejects non-matching local passwords" do
     Process.put({:answer, "Confirm your local password"}, "different")
-    assert_raise Error, "The local password entries do not match", &Auth.run/0
+
+    assert_raise Error, "The local password entries do not match", fn ->
+      Auth.run(credentials: true, encrypt_token: true)
+    end
+
     refute_received {:config_written, _}
   end
 
@@ -136,6 +157,81 @@ defmodule MixGrispIo.CommandTest do
     for command <- ~w(auth deauth deploy upload list delete validate cancel reboot version) do
       assert Mix.Task.get("grisp-io.#{command}")
     end
+  end
+
+  test "auth can persist a plaintext token without requesting a local password" do
+    assert :ok = Auth.run(credentials: true, encrypt_token: false)
+    assert_received {:config_written, %{username: "user", token: "new-token"}}
+    refute_received {:success, "Please provide a local password to encrypt the token"}
+  end
+
+  test "plaintext tokens bypass password decryption" do
+    Process.put(:config, %{token: "plaintext"})
+    assert Command.token!() == "plaintext"
+  end
+
+  test "deploy requires a target before selecting a release" do
+    assert_raise Error, fn -> Deploy.run([]) end
+    refute_received {:deployed, _, _}
+  end
+
+  @tag :tmp_dir
+  test "upload uses the existing selected release package and forwards overwrite", context do
+    in_fixture(context.tmp_dir, fn package_path ->
+      File.mkdir_p!(Path.dirname(package_path))
+      File.write!(package_path, "fixture-package")
+      assert :ok = Upload.run(force: false)
+      package = Path.basename(package_path)
+      assert_received {:uploaded, ^package, "fixture-package", false}
+      assert :ok = Upload.run(force: true)
+      assert_received {:uploaded, ^package, "fixture-package", true}
+      refute_received {:info, "* Building software package..."}
+    end)
+  end
+
+  @tag :tmp_dir
+  test "deploy selects the release package and accepts an explicit override", context do
+    in_fixture(context.tmp_dir, fn package_path ->
+      package = Path.basename(package_path)
+      assert :ok = Deploy.run(device: "ci-dummy")
+      assert_received {:deployed, ^package, "ci-dummy"}
+      assert :ok = Deploy.run(device: "ci-dummy", package: "other.tar")
+      assert_received {:deployed, "other.tar", "ci-dummy"}
+    end)
+  end
+
+  @tag :tmp_dir
+  test "delete selects the current release package when no name is supplied", context do
+    in_fixture(context.tmp_dir, fn package_path ->
+      package = Path.basename(package_path)
+      assert :ok = Delete.run([])
+      assert_received {:deleted, ^package}
+    end)
+  end
+
+  test "version task prints the actual application version" do
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        Mix.Task.get("grisp-io.version").run([])
+      end)
+
+    assert output == "mix_grisp_io: #{MixGrispIo.version()}\n"
+  end
+
+  defp in_fixture(directory, fun) do
+    File.write!(Path.join(directory, "mix.exs"), """
+    defmodule MixGrispIoTestFixture.MixProject do
+      use Mix.Project
+      def project do
+        [app: :mix_grisp_io_test_fixture, version: "0.1.0",
+         releases: [robot: [version: "1.2.3"]], grisp: [platform: :grisp2]]
+      end
+    end
+    """)
+
+    Mix.Project.in_project(:mix_grisp_io_test_fixture, directory, fn _ ->
+      fun.(MixGrisp.Project.update_file(:robot, "1.2.3"))
+    end)
   end
 
   defp package(name, app) do

@@ -10,11 +10,26 @@ defmodule MixGrispIo.IO do
 
   def ask(prompt, :string), do: IO.gets("\n#{prompt} > ") |> normalize!()
 
+  def ask(prompt, :string, default) do
+    case IO.gets("\n#{prompt} > ") do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> default
+          answer -> answer
+        end
+
+      other ->
+        normalize!(other)
+    end
+  end
+
   def success(message) do
     Mix.shell().info(IO.ANSI.format([:green, IO.iodata_to_binary(message)]))
   end
 
   def info(message), do: Mix.shell().info(IO.iodata_to_binary(message))
+
+  def read_line(prompt), do: IO.gets(prompt)
 
   # `:io.get_password/0` does not reliably suppress echo when invoked by Mix on
   # all terminals. This is the same redraw strategy used by rebar3_grisp_io:

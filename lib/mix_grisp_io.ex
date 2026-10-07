@@ -4,7 +4,7 @@ defmodule MixGrispIo do
   to GRiSP.io.
 
   The user-facing API is provided by the `mix grisp-io.*` tasks. The lower-level
-  modules are public so applications and tests can use the same API, encrypted
+  modules are public so applications and tests can use the same API, token
   configuration, and package selection logic as the tasks.
   """
 
