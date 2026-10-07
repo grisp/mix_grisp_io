@@ -70,7 +70,10 @@ defmodule MixGrispIo.PKCE do
 
   defp start_prompt(parent, tag) do
     spawn_monitor(fn ->
-      send(parent, {tag, :input, IO.gets("Paste the authentication code if prompted: ")})
+      send(
+        parent,
+        {tag, :input, Command.io().read_line("Paste the authentication code if prompted: ")}
+      )
     end)
   end
 

@@ -36,6 +36,33 @@ defmodule MixGrispIoTest do
     end
   end
 
+  test "persists plaintext tokens in a consultable configuration", context do
+    config = %{username: "Test", token: "plaintext"}
+    options = [config_dir: context.config_dir]
+    assert :ok = Config.write(config, options)
+    assert Config.read(options) == config
+    assert {:ok, [^config]} = :file.consult(to_charlist(Config.path(options)))
+  end
+
+  test "encryption uses fresh IVs and rejects modified authentication tags" do
+    first = Config.encrypt_token("password", "token")
+    second = Config.encrypt_token("password", "token")
+    refute first.iv == second.iv
+    <<byte, rest::binary>> = first.tag
+    corrupted = %{first | tag: <<Bitwise.bxor(byte, 1), rest::binary>>}
+
+    assert_raise Error, "Wrong local password", fn ->
+      Config.decrypt_token("password", corrupted)
+    end
+  end
+
+  test "rejects invalid configuration terms", context do
+    options = [config_dir: context.config_dir]
+    File.mkdir_p!(context.config_dir)
+    File.write!(Config.path(options), "not_a_map.\n")
+    assert_raise Error, fn -> Config.read(options) end
+  end
+
   test "validates device serial numbers" do
     assert MixGrispIo.Command.device!(1337) == "1337"
     assert MixGrispIo.Command.device!("001337") == "001337"
