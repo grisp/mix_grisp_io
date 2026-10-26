@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-26
+
+### Security
+
+- Upgrade the locked `certifi` dependency to 2.18.0 to remove compromised
+  emSign root certificates.
+
+### Changed
+
+- Upgrade `mix_grisp` to 1.1.2 and Hackney to 4.9.1.
+
 ## [1.1.0] - 2026-10-07
 
 ### Added
@@ -46,6 +57,7 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.1...HEAD
+[1.1.1]: https://github.com/grisp/mix_grisp_io/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/grisp/mix_grisp_io/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/grisp/mix_grisp_io/releases/tag/1.0.0
