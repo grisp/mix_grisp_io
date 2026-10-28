@@ -7,9 +7,12 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-28
+
 ### Changed
 
-- Update the locked `mix_grisp` dependency to 1.1.3.
+- Upgrade `mix_grisp` to 1.1.3 and refresh its locked `grisp_tools` dependency
+  to 2.11.6, including `edifa` 1.0.1 and `erlexec` 2.5.0.
 
 ## [1.1.1] - 2026-10-26
 
@@ -61,7 +64,8 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.1...HEAD
+[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.2...HEAD
+[1.1.2]: https://github.com/grisp/mix_grisp_io/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/grisp/mix_grisp_io/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/grisp/mix_grisp_io/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/grisp/mix_grisp_io/releases/tag/1.0.0
