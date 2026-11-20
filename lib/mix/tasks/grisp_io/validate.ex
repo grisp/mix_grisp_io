@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Validate" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Validate an update"
   @moduledoc "Validates an update with `mix grisp-io.validate --device SERIAL`."
 
   @switches [device: :string]

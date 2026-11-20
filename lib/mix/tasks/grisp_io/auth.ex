@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Auth" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Authenticate yourself to GRiSP.io"
   @moduledoc """
   Authenticates through the browser and saves an API token.
 
