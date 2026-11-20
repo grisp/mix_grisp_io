@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.List" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "List update packages"
   @moduledoc "Lists update packages stored on GRiSP.io."
 
   @impl Mix.Task

@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Reboot" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Reboot a device"
   @moduledoc "Requests a reboot of a GRiSP.io device."
 
   @switches [device: :string]
