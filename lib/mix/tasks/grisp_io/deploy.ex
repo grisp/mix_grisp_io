@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Deploy" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Deploy the release"
   @moduledoc """
   Requests deployment of an uploaded package.
 

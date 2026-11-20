@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Version" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Print the version of the plugin"
 
   @impl Mix.Task
   def run([]) do

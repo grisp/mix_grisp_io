@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Cancel" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Cancel a device update"
   @moduledoc "Cancels an update running on a GRiSP.io device."
 
   @switches [device: :string]

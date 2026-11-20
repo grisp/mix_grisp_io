@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Delete" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Delete an update package"
   @moduledoc "Deletes the selected release's update package from GRiSP.io."
 
   @switches [relname: :string, relvsn: :string]
