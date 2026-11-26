@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-11-26
+
+### Added
+
+- Add the Mix package release workflow
+
+
+### Changed
+
+- Document the task so they show up in mix help
+- Audit Hex dependencies in CI (#3)
+
 ## [1.1.2] - 2026-10-28
 
 ### Changed
@@ -64,7 +76,8 @@ The format is based on [Keep a Changelog], and this project adheres to
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.2...HEAD
+[Unreleased]: https://github.com/grisp/mix_grisp_io/compare/1.1.3...HEAD
+[1.1.3]: https://github.com/grisp/mix_grisp_io/compare/1.1.2...1.1.3
 [1.1.2]: https://github.com/grisp/mix_grisp_io/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/grisp/mix_grisp_io/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/grisp/mix_grisp_io/compare/1.0.0...1.1.0
