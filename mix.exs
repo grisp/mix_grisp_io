@@ -26,8 +26,8 @@ defmodule MixGrispIo.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:mix_grisp, "~> 1.1"},
-      {:hackney, "~> 4.7"},
+      {:mix_grisp, "~> 1.2"},
+      {:hackney, "~> 4.12.4"},
       {:jsx, "~> 3.1"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]

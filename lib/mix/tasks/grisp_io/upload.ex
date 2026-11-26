@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Upload" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Upload an update to GRiSP.io"
   @moduledoc """
   Builds (or reuses) and uploads a GRiSP software update package.
 

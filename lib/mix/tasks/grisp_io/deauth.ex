@@ -1,7 +1,7 @@
 defmodule :"Elixir.Mix.Tasks.Grisp-io.Deauth" do
   use Mix.Task
 
-  @shortdoc false
+  @shortdoc "Revoke the current authentication token"
   @moduledoc "Revokes the current GRiSP.io token and removes local credentials."
 
   @impl Mix.Task
