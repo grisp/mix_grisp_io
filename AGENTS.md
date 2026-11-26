@@ -18,8 +18,7 @@ Use the release bot's private GPG key and matching email. Set the
 `RELEASE_GPG_KEY_PASSPHRASE` secret for a protected key or remove the secret
 for an unprotected key. Replace any setup placeholders before dispatching.
 
-Restrict the environment to the `main` branch and require a GitHub reviewer
-other than the account that sends the request.
+Restrict the environment to the `main` branch.
 
 On the [`mix_grisp_io` package](https://hex.pm/packages/mix_grisp_io), a full
 Hex owner must enable staged publishing and configure Workload Identity with
@@ -39,11 +38,9 @@ on Hex. See [Hex Workload Identity](https://hex.pm/docs/workload-identity).
    ```
 
 3. Open the new **Release** run in [GitHub Actions](https://github.com/grisp/mix_grisp_io/actions/workflows/release.yml).
-4. Have a GitHub environment reviewer check the requested version, commit,
-   and CI result before approving the `release` deployment.
-5. Get the Hex approval link from the **Publish to Hex** step log. For a docs
+4. Get the Hex approval link from the **Publish to Hex** step log. For a docs
    upload by itself, use the **Publish the Hex documentation** step log.
-6. Give the link to the person who can approve the release on Hex.
+5. Give the link to the person who can approve the release on Hex.
 
 The person who approves the release must complete two-factor authentication on Hex.
 The workflow updates the version in `mix.exs` and prepares the changelog before
@@ -64,3 +61,19 @@ Before retrying an upload failure, check the run log and Hex for an existing
 staged upload. If one is pending, use its approval link. If Hex reports
 `No matching workload identity`, have a Hex owner check the settings above
 before rerunning. Keep the original tag and GitHub release for recovery.
+
+If the original run uses a workflow that fails to recover its own tag, wait
+for the fixed workflow and passing CI on the default branch. Send a recovery
+request with the existing version and the failed run ID. The workflow checks
+the run, signed commit, and signed tag before using the tagged source.
+
+Before staging on Hex, the workflow also checks that the GitHub release uses
+the same annotated tag, was created by GitHub Actions, and has notes from the
+tagged changelog. If these checks fail, inspect the GitHub release and tag
+against the original run before retrying.
+
+```sh
+gh api --method POST repos/grisp/mix_grisp_io/dispatches --input - <<'JSON'
+{"event_type":"release","client_payload":{"version":"X.Y.Z","resume_run_id":"123456789"}}
+JSON
+```

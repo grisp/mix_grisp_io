@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 360
     environment: release
     permissions:
+      actions: read # Verify the original workflow run during recovery.
       contents: write # Push the commit and tag. Create the GitHub release.
       id-token: write # Request an OIDC token for Hex.
     env:
@@ -36,12 +37,20 @@ jobs:
             echo 'Use a version in X.Y.Z format.' >&2
             exit 1
           fi
+          if ! resume_run_id=$(jq -er '.client_payload |
+            if has("resume_run_id") then .resume_run_id | strings |
+              select(test("\\A[1-9][0-9]*\\z"))
+            else "" end' "$GITHUB_EVENT_PATH"); then
+            echo 'Use a GitHub Actions run ID as a string for resume_run_id.' >&2
+            exit 1
+          fi
           package=${PACKAGE_OVERRIDE:-${GITHUB_REPOSITORY##*/}}
           if [[ ! $package =~ ^[a-z][a-z0-9_]*$ ]]; then
             echo 'Set HEX_PACKAGE_NAME to the Hex package name.' >&2
             exit 1
           fi
           printf '%s\n' "RELEASE_VERSION=$version" "HEX_PACKAGE=$package" \
+            "RESUME_RUN_ID=$resume_run_id" \
             "HEX_RELEASE_URL=https://hex.pm/api/packages/$package/releases/$version" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -51,18 +60,64 @@ jobs:
 
       - name: Check the branch and tag
         id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_EMAIL: ${{ vars.RELEASE_SIGNING_EMAIL }}
         run: |
+          # Checkout can point origin at the old dispatch commit on a rerun.
+          branch_ref="refs/remotes/origin/$RELEASE_BRANCH"
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            fetch --no-tags origin "+refs/heads/$RELEASE_BRANCH:$branch_ref"
+          release_run=${RESUME_RUN_ID:-$GITHUB_RUN_ID}
+
           if git show-ref --verify --quiet "refs/tags/$RELEASE_VERSION"; then
-            commit=$(git rev-parse "refs/tags/$RELEASE_VERSION^{commit}")
+            tag_ref="refs/tags/$RELEASE_VERSION"
+            commit=$(git rev-parse "$tag_ref^{commit}")
             trailer=$(git log -1 --format='%(trailers:key=Release-Run,valueonly)' "$commit")
-            if [[ $trailer != "$GITHUB_RUN_ID" ]] ||
-               ! git merge-base --is-ancestor "$commit" "origin/$RELEASE_BRANCH"; then
-              echo 'The tag already exists.' >&2
+            if [[ $trailer != "$release_run" ]] ||
+               ! git merge-base --is-ancestor "$commit" "$branch_ref"; then
+              echo 'The existing tag does not belong to the release run on the default branch.' >&2
               exit 1
+            fi
+            if [[ -n $RESUME_RUN_ID ]]; then
+              : "${RELEASE_SIGNING_EMAIL:?Set RELEASE_SIGNING_EMAIL in the release environment.}"
+              if [[ $(git rev-parse "$branch_ref") != "$GITHUB_SHA" ]]; then
+                echo 'The release branch changed. Send a new recovery request.' >&2
+                exit 1
+              fi
+              parent=$(git rev-parse "$commit^")
+              if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN_ID" |
+                jq -e --arg parent "$parent" --arg branch "$RELEASE_BRANCH" '
+                  .path == ".github/workflows/release.yml" and .event == "repository_dispatch" and
+                  .conclusion == "failure" and .head_branch == $branch and .head_sha == $parent
+                ' > /dev/null; then
+                echo 'The original failed release run does not match the tagged commit.' >&2
+                exit 1
+              fi
+              tag=$(git rev-parse "$tag_ref^{tag}")
+              if ! gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag" |
+                jq -e --arg commit "$commit" --arg email "$RELEASE_SIGNING_EMAIL" \
+                  --arg version "$RELEASE_VERSION" '
+                    .tag == $version and .object.type == "commit" and .object.sha == $commit and
+                    .tagger.email == $email and .verification.verified == true
+                  ' > /dev/null; then
+                echo 'The tag is not verified for the configured release signer.' >&2
+                exit 1
+              fi
+              if ! gh api "repos/$GITHUB_REPOSITORY/commits/$commit" |
+                jq -e --arg email "$RELEASE_SIGNING_EMAIL" '
+                  .commit.committer.email == $email and .commit.verification.verified == true
+                ' > /dev/null; then
+                echo 'The commit is not verified for the configured release signer.' >&2
+                exit 1
+              fi
             fi
             git switch --detach "$commit"
             echo 'exists=true' >> "$GITHUB_OUTPUT"
-          elif [[ $(git rev-parse "origin/$RELEASE_BRANCH") != "$GITHUB_SHA" ]]; then
+          elif [[ -n $RESUME_RUN_ID ]]; then
+            echo 'Recovery requires an existing release tag.' >&2
+            exit 1
+          elif [[ $(git rev-parse "$branch_ref") != "$GITHUB_SHA" ]]; then
             echo 'The release branch changed. Send a new release request.' >&2
             exit 1
           else
@@ -95,7 +150,10 @@ jobs:
             404) ;;
             200)
               if [[ $TAG_EXISTS != true ]] || ! jq -e --arg run "$GITHUB_RUN_ID" \
-                '(.oidc_claims.run_id | tostring) == $run' "$RUNNER_TEMP/hex-release.json" > /dev/null; then
+                --arg original "$RESUME_RUN_ID" '
+                  (.oidc_claims.run_id | tostring) as $id |
+                  $id == $run or ($original != "" and $id == $original)
+                ' "$RUNNER_TEMP/hex-release.json" > /dev/null; then
                 echo 'The release already exists on Hex.' >&2
                 exit 1
               fi
@@ -260,31 +318,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Return 1 only for a confirmed absence, 2 for API/JSON errors, 3 for a conflict.
-          check_release() {
-            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_VERSION" \
-                > "$RUNNER_TEMP/github-release.json" 2> "$RUNNER_TEMP/github-release-error"; then
-              if ! jq -e 'type == "object" and has("tag_name") and has("draft") and has("prerelease")' \
-                  "$RUNNER_TEMP/github-release.json" > /dev/null; then
-                echo 'GitHub returned an invalid release response.' >&2
-                return 2
-              fi
-              if ! jq -e --arg tag "$RELEASE_VERSION" \
-                  '.tag_name == $tag and .draft == false and .prerelease == false' \
-                  "$RUNNER_TEMP/github-release.json" > /dev/null; then
-                echo 'An unexpected draft, prerelease or tag exists on GitHub.' >&2
-                return 3
-              fi
-              return 0
-            fi
-            if grep -q '(HTTP 404)' "$RUNNER_TEMP/github-release-error"; then return 1; fi
-            cat "$RUNNER_TEMP/github-release-error" >&2
-            return 2
-          }
-
-          if check_release; then exit 0; else status=$?; fi
-          if (( status == 3 )); then exit 1; fi
+          tag_ref="refs/tags/$RELEASE_VERSION"
+          tag_object=$(git rev-parse "$tag_ref^{tag}")
+          commit=$(git rev-parse "$tag_ref^{commit}")
           notes="$RUNNER_TEMP/release-notes.md"
+          git show "$commit:CHANGELOG.md" > "$RUNNER_TEMP/tagged-changelog.md"
           awk -v version="$RELEASE_VERSION" -v previous_file="$RUNNER_TEMP/previous-version" '
             /^## \[[0-9]+\.[0-9]+\.[0-9]+\] - / {
               if (!found) {
@@ -304,7 +342,82 @@ jobs:
             }
             found && started { blank = blank "\n" }
             END { if (!done) exit 1 }
-          ' CHANGELOG.md > "$notes"
+          ' "$RUNNER_TEMP/tagged-changelog.md" > "$notes"
+
+          # Return 1 only for a confirmed absence, 2 for API/JSON errors, 3 for a conflict.
+          check_release() {
+            # target_commitish is ignored by GitHub when the tag already exists.
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" \
+                > "$RUNNER_TEMP/github-release-ref.json"; then
+              return 2
+            fi
+            if ! jq -e 'type == "object" and has("ref") and has("object")' \
+                "$RUNNER_TEMP/github-release-ref.json" > /dev/null; then
+              echo 'GitHub returned an invalid tag reference response.' >&2
+              return 2
+            fi
+            if ! jq -e --arg ref "$tag_ref" --arg object "$tag_object" '
+                .ref == $ref and .object.type == "tag" and .object.sha == $object
+              ' "$RUNNER_TEMP/github-release-ref.json" > /dev/null; then
+              echo 'The GitHub tag does not match the local annotated release tag.' >&2
+              return 3
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_VERSION" \
+                > "$RUNNER_TEMP/github-release.json" 2> "$RUNNER_TEMP/github-release-error"; then
+              if ! jq -e 'type == "object" and has("tag_name") and has("draft") and has("prerelease")' \
+                  "$RUNNER_TEMP/github-release.json" > /dev/null; then
+                echo 'GitHub returned an invalid release response.' >&2
+                return 2
+              fi
+              if ! jq -e --arg version "$RELEASE_VERSION" --rawfile notes "$notes" '
+                  def clean: gsub("\r\n"; "\n") | sub("[[:space:]]+\\z"; "");
+                  ($notes | clean) as $expected |
+                  (.body // "" | clean) as $actual |
+                  (if $expected == "" then "" else $expected + "\n\n" end) as $prefix |
+                  .tag_name == $version and .name == $version and
+                  .draft == false and .prerelease == false and
+                  .author.login == "github-actions[bot]" and .author.type == "Bot" and
+                  ($actual == $expected or
+                    (($actual | startswith($prefix)) and
+                     ($actual | ltrimstr($prefix) | test("\\A## New Contributors[ \t]*\n"))))
+                ' "$RUNNER_TEMP/github-release.json" > /dev/null; then
+                echo 'The existing GitHub release does not match the tag, title, author, or tagged changelog.' >&2
+                return 3
+              fi
+              return 0
+            fi
+            if grep -q '(HTTP 404)' "$RUNNER_TEMP/github-release-error"; then
+              # A draft may not be returned by the release-by-tag endpoint.
+              if ! gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                  > "$RUNNER_TEMP/github-releases.json" ||
+                ! jq -es '
+                    length > 0 and all(.[]; type == "array") and
+                    all(.[][]; (.tag_name | type) == "string" and (.draft | type) == "boolean")
+                  ' \
+                  "$RUNNER_TEMP/github-releases.json" > /dev/null; then
+                echo 'Could not verify that the GitHub release is absent.' >&2
+                return 2
+              fi
+              if jq -es --arg tag "$RELEASE_VERSION" \
+                  'any(.[][]; .tag_name == $tag and .draft == true)' \
+                  "$RUNNER_TEMP/github-releases.json" > /dev/null; then
+                echo 'A draft GitHub release already uses this tag.' >&2
+                return 3
+              fi
+              if jq -es --arg tag "$RELEASE_VERSION" 'any(.[][]; .tag_name == $tag)' \
+                  "$RUNNER_TEMP/github-releases.json" > /dev/null; then
+                return 2
+              fi
+              return 1
+            fi
+            cat "$RUNNER_TEMP/github-release-error" >&2
+            return 2
+          }
+
+          if check_release; then exit 0; else status=$?; fi
+          if (( status == 3 )); then exit 1; fi
+          publish_notes="$RUNNER_TEMP/github-release-notes.md"
+          cp "$notes" "$publish_notes"
           previous_version=$(cat "$RUNNER_TEMP/previous-version")
           for attempt in {1..5}; do
             if gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
@@ -321,16 +434,17 @@ jobs:
             sleep "$((attempt * 5))"
           done
           if grep -qE '^## New Contributors[[:space:]]*$' "$RUNNER_TEMP/generated-notes.md"; then
-            printf '\n' >> "$notes"
-            sed -nE '/^## New Contributors[[:space:]]*$/,$p' "$RUNNER_TEMP/generated-notes.md" >> "$notes"
+            printf '\n' >> "$publish_notes"
+            sed -nE '/^## New Contributors[[:space:]]*$/,$p' "$RUNNER_TEMP/generated-notes.md" >> "$publish_notes"
           fi
           for attempt in {1..5}; do
             # Recheck before creating: a failed response may follow a successful creation.
             if check_release; then exit 0; else status=$?; fi
             if (( status == 1 )); then
               if gh release create --repo "$GITHUB_REPOSITORY" "$RELEASE_VERSION" \
-                  --title "$RELEASE_VERSION" --verify-tag --notes-file "$notes"; then
-                if check_release; then exit 0; fi
+                  --title "$RELEASE_VERSION" --verify-tag --notes-file "$publish_notes"; then
+                if check_release; then exit 0; else status=$?; fi
+                if (( status == 3 )); then exit 1; fi
               fi
             elif (( status == 3 )); then
               exit 1
