@@ -28,12 +28,15 @@ on Hex. See [Hex Workload Identity](https://hex.pm/docs/workload-identity).
 
 ## Send a release request
 
-1. Replace `X.Y.Z` with the version that the user gives.
-2. Run the following command.
+1. Replace `X.Y.Z` with the version that the user gives and
+   `FULL_COMMIT_SHA` with the full SHA of the reviewed default branch commit
+   that passed CI.
+2. Run the following command. GitHub dispatches from the default branch.
+   The request fails if that commit differs from the supplied SHA.
 
    ```sh
    gh api --method POST repos/grisp/mix_grisp_io/dispatches --input - <<'JSON'
-   {"event_type":"release","client_payload":{"version":"X.Y.Z"}}
+   {"event_type":"release","client_payload":{"version":"X.Y.Z","expected_sha":"FULL_COMMIT_SHA"}}
    JSON
    ```
 
@@ -66,6 +69,8 @@ If the original run uses a workflow that fails to recover its own tag, wait
 for the fixed workflow and passing CI on the default branch. Send a recovery
 request with the existing version and the failed run ID. The workflow checks
 the run, signed commit, and signed tag before using the tagged source.
+`expected_sha` is the reviewed default branch commit that runs the recovery
+workflow. The existing release tag determines which source is packaged.
 
 Before staging on Hex, the workflow also checks that the GitHub release uses
 the same annotated tag, was created by GitHub Actions, and has notes from the
@@ -74,6 +79,6 @@ against the original run before retrying.
 
 ```sh
 gh api --method POST repos/grisp/mix_grisp_io/dispatches --input - <<'JSON'
-{"event_type":"release","client_payload":{"version":"X.Y.Z","resume_run_id":"123456789"}}
+{"event_type":"release","client_payload":{"version":"X.Y.Z","expected_sha":"FULL_COMMIT_SHA","resume_run_id":"123456789"}}
 JSON
 ```

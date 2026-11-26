@@ -37,6 +37,17 @@ jobs:
             echo 'Use a version in X.Y.Z format.' >&2
             exit 1
           fi
+          if ! expected_sha=$(jq -er '.client_payload |
+            if has("expected_sha") then .expected_sha | strings |
+              select(test("\\A[0-9a-f]{40}\\z"))
+            else "" end' "$GITHUB_EVENT_PATH"); then
+            echo 'Use a full Git commit SHA for expected_sha.' >&2
+            exit 1
+          fi
+          if [[ -n $expected_sha && $expected_sha != "$GITHUB_SHA" ]]; then
+            echo 'The dispatch commit does not match the reviewed commit. Check main and CI before retrying.' >&2
+            exit 1
+          fi
           if ! resume_run_id=$(jq -er '.client_payload |
             if has("resume_run_id") then .resume_run_id | strings |
               select(test("\\A[1-9][0-9]*\\z"))
@@ -79,13 +90,12 @@ jobs:
               echo 'The existing tag does not belong to the release run on the default branch.' >&2
               exit 1
             fi
+            parent=$(git rev-parse "$commit^")
             if [[ -n $RESUME_RUN_ID ]]; then
-              : "${RELEASE_SIGNING_EMAIL:?Set RELEASE_SIGNING_EMAIL in the release environment.}"
               if [[ $(git rev-parse "$branch_ref") != "$GITHUB_SHA" ]]; then
                 echo 'The release branch changed. Send a new recovery request.' >&2
                 exit 1
               fi
-              parent=$(git rev-parse "$commit^")
               if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN_ID" |
                 jq -e --arg parent "$parent" --arg branch "$RELEASE_BRANCH" '
                   .path == ".github/workflows/release.yml" and .event == "repository_dispatch" and
@@ -94,23 +104,27 @@ jobs:
                 echo 'The original failed release run does not match the tagged commit.' >&2
                 exit 1
               fi
-              tag=$(git rev-parse "$tag_ref^{tag}")
-              if ! gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag" |
-                jq -e --arg commit "$commit" --arg email "$RELEASE_SIGNING_EMAIL" \
-                  --arg version "$RELEASE_VERSION" '
-                    .tag == $version and .object.type == "commit" and .object.sha == $commit and
-                    .tagger.email == $email and .verification.verified == true
-                  ' > /dev/null; then
-                echo 'The tag is not verified for the configured release signer.' >&2
-                exit 1
-              fi
-              if ! gh api "repos/$GITHUB_REPOSITORY/commits/$commit" |
-                jq -e --arg email "$RELEASE_SIGNING_EMAIL" '
-                  .commit.committer.email == $email and .commit.verification.verified == true
+            elif [[ $parent != "$GITHUB_SHA" ]]; then
+              echo 'The tagged commit does not descend directly from the dispatch commit for this run.' >&2
+              exit 1
+            fi
+            : "${RELEASE_SIGNING_EMAIL:?Set RELEASE_SIGNING_EMAIL in the release environment.}"
+            tag=$(git rev-parse "$tag_ref^{tag}")
+            if ! gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag" |
+              jq -e --arg commit "$commit" --arg email "$RELEASE_SIGNING_EMAIL" \
+                --arg version "$RELEASE_VERSION" '
+                  .tag == $version and .object.type == "commit" and .object.sha == $commit and
+                  .tagger.email == $email and .verification.verified == true
                 ' > /dev/null; then
-                echo 'The commit is not verified for the configured release signer.' >&2
-                exit 1
-              fi
+              echo 'The tag is not verified for the configured release signer.' >&2
+              exit 1
+            fi
+            if ! gh api "repos/$GITHUB_REPOSITORY/commits/$commit" |
+              jq -e --arg email "$RELEASE_SIGNING_EMAIL" '
+                .commit.committer.email == $email and .commit.verification.verified == true
+              ' > /dev/null; then
+              echo 'The commit is not verified for the configured release signer.' >&2
+              exit 1
             fi
             git switch --detach "$commit"
             echo 'exists=true' >> "$GITHUB_OUTPUT"
@@ -302,15 +316,30 @@ jobs:
           tar -xOf "$package" contents.tar.gz | tar -tzf -
           mix docs
           test -f doc/index.html
-          git diff --exit-code
+          git diff --exit-code HEAD
 
       - name: Push the commit and tag
         if: steps.tag.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ $(git rev-parse HEAD^) != "$GITHUB_SHA" ||
+                $(git rev-parse "refs/tags/$RELEASE_VERSION^{commit}") != "$(git rev-parse HEAD)" ]]; then
+            echo 'The release commit or tag does not match the dispatch commit.' >&2
+            exit 1
+          fi
+          # Check drafts and releases even when their Git tag does not exist.
+          if ! gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -es --arg tag "$RELEASE_VERSION" '
+              length > 0 and all(.[]; type == "array") and
+              all(.[][]; (.tag_name | type) == "string" and .tag_name != $tag)
+            ' > /dev/null; then
+            echo 'Could not confirm that the version is unused on GitHub. Check existing releases and drafts.' >&2
+            exit 1
+          fi
           git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
-            push --atomic origin "HEAD:refs/heads/$RELEASE_BRANCH" "refs/tags/$RELEASE_VERSION"
+            push --atomic --force-with-lease="refs/heads/$RELEASE_BRANCH:$GITHUB_SHA" \
+            origin "HEAD:refs/heads/$RELEASE_BRANCH" "refs/tags/$RELEASE_VERSION"
 
       - name: Create the GitHub release
         env:
