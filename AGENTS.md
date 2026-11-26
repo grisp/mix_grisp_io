@@ -2,13 +2,27 @@
 
 ## Before a release
 
-1. Make sure that [release.yml](.github/workflows/release.yml) is on the default branch.
-2. Use a GitHub CLI account with write access to `grisp/mix_grisp_io`.
-3. Make sure that CI passed for the commit on the default branch.
-4. Make sure that the requested version is newer than the last release and is
-   absent from Git tags, GitHub Releases, and Hex. If it already exists, see
-   [Continue a release](#continue-a-release).
-5. Confirm the GitHub and Hex settings below with a package owner before the
+1. Dispatch only when the user asks to release `mix_grisp_io` and provides the
+   version. Use the GitHub CLI account with write access to
+   `grisp/mix_grisp_io`.
+2. Read the current remote `main` SHA. Check [release.yml](.github/workflows/release.yml)
+   at that SHA, review the changes since the last release tag, and verify
+   successful `ci.yml` for the exact SHA on `main`. A local checkout or a
+   passing PR check does not establish that the release commit passed CI.
+
+   ```sh
+   gh api repos/grisp/mix_grisp_io/branches/main --jq .commit.sha
+   gh run list --repo grisp/mix_grisp_io --workflow ci.yml --branch main \
+     --commit FULL_COMMIT_SHA --json headSha,status,conclusion,url
+   ```
+
+3. For a fresh release, check that the version is newer than the last tag and
+   absent from remote tags, GitHub Releases (including drafts), and Hex.
+   Check recent Release runs for the same version because a staged Hex
+   upload may be absent from the public registry. If a tag, release, or run
+   already exists for that version, see [Continue a release](#continue-a-release).
+   Stop and report any API error or ambiguous state before dispatching.
+4. Confirm the GitHub and Hex settings below with a package owner before the
    first release or after changing those settings.
 
 ### Release settings
@@ -17,6 +31,8 @@ The GitHub `release` environment supplies the `RELEASE_SIGNING_KEY` secret and t
 Use the release bot's private GPG key and matching email. Set the
 `RELEASE_GPG_KEY_PASSPHRASE` secret for a protected key or remove the secret
 for an unprotected key. Replace any setup placeholders before dispatching.
+Keep signing key and passphrase values in the environment secrets. Use Hex
+Workload Identity for publishing.
 
 Restrict the environment to the `main` branch.
 
@@ -41,29 +57,40 @@ on Hex. See [Hex Workload Identity](https://hex.pm/docs/workload-identity).
    ```
 
 3. Open the new **Release** run in [GitHub Actions](https://github.com/grisp/mix_grisp_io/actions/workflows/release.yml).
-4. Get the Hex approval link from the **Publish to Hex** step log. For a docs
-   upload by itself, use the **Publish the Hex documentation** step log.
-5. Give the link to the person who can approve the release on Hex.
+   Verify its dispatch SHA and the `RELEASE_VERSION` shown in the
+   **Check the branch and tag** step log.
+   If the dispatch response is missing or uncertain, look for the matching
+   run before sending another request.
+4. Check that the signed release tag points to the release commit and the
+   GitHub release uses that tag. Get the Hex approval link from **Publish to
+   Hex**, or **Publish the Hex documentation** for a docs upload alone.
+5. Give the link, version, tagged commit, and run link to the person who can
+   approve the upload. They should review the staged package and docs and
+   compare any checksums printed by the run before approving on Hex with 2FA.
 
-The person who approves the release must complete two-factor authentication on Hex.
 The workflow updates the version in `mix.exs` and prepares the changelog before
 signing the release commit and tag.
 The workflow creates the GitHub release before staging the package and documentation on Hex.
-The job ends after the upload succeeds. Hex approval can happen later.
+The job ends after the upload succeeds. Report the release as staged until
+the exact version is public on Hex. After approval, verify the requested
+version, its workflow provenance, and the versioned docs on HexDocs.
 
 ## Continue a release
 
-If Hex approval is pending after a successful run, use the link in the
-completed run to approve it. Approval completes the release on Hex.
-
-If the run fails after pushing the tag, correct the cause and select
-**Re-run all jobs** on the original run. The workflow checks that the tag
-belongs to that run.
-
-Before retrying an upload failure, check the run log and Hex for an existing
-staged upload. If one is pending, use its approval link. If Hex reports
-`No matching workload identity`, have a Hex owner check the settings above
-before rerunning. Keep the original tag and GitHub release for recovery.
+1. Inspect the original run, its publish logs, the exact remote tag, the
+   GitHub release, and Hex before retrying. If the tag exists, verify it
+   points to the signed release commit and that its `Release-Run` trailer
+   identifies the original run. Use an existing pending approval link.
+   If the release is already public with its docs, verify it and report
+   completion. Keep the original tag and GitHub release for recovery.
+2. If the run failed, fix the cause before retrying. For `No matching workload
+   identity`, have a Hex owner check the settings above. Use **Re-run all
+   jobs** on the original run. For a run that failed before pushing a tag
+   and whose dispatch commit is no longer on the tip of `main`, review the
+   new commit and repeat the fresh release checks before dispatching again.
+3. If a tag or release belongs to a different run, or the signed tag or
+   GitHub release fails verification, stop and report the mismatch. Use the
+   workflow to publish so the upload keeps its Hex provenance and approval.
 
 If the original run uses a workflow that fails to recover its own tag, wait
 for the fixed workflow and passing CI on the default branch. Send a recovery
